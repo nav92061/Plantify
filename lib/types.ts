@@ -5,6 +5,7 @@ export type SoilProfile = {
   drainage: string;
   phLow: number;
   phHigh: number;
+  estimatedPh?: string;
 };
 
 export type ClimateProfile = {
@@ -32,6 +33,15 @@ export type RankedCrop = {
   name: string;
   score: number;
   reason: string;
+  ph?: string;
+  zones?: string;
+  soil?: string;
+  drainage?: string;
+};
+
+export type WateringAdvice = {
+  headline: string;
+  detail: string;
 };
 
 export type AnalyzeResult = {
@@ -39,7 +49,9 @@ export type AnalyzeResult = {
   lat: number;
   lon: number;
   soil: SoilProfile;
-  climate: ClimateProfile;
+  climate?: ClimateProfile;
+  usdaZone?: string;
+  watering?: WateringAdvice;
   crops: RankedCrop[];
   fromCache?: boolean;
 };

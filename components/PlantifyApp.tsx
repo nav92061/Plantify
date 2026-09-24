@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState } from "react";
+import { phWords } from "@/lib/watering";
 import type { AnalyzeResult } from "@/lib/types";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
@@ -21,6 +22,7 @@ export default function PlantifyApp() {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [email, setEmail] = useState("");
   const [emailDone, setEmailDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function setPin(nextLat: number, nextLon: number, nextLabel?: string) {
     setLat(nextLat);
@@ -47,6 +49,7 @@ export default function PlantifyApp() {
 
     setPhase("loading");
     setEmailDone(false);
+    setError(null);
 
     const payload =
       lat != null && lon != null
@@ -59,42 +62,21 @@ export default function PlantifyApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json()) as AnalyzeResult;
+      const data = (await res.json()) as AnalyzeResult & { error?: string };
+      if (!res.ok || data.error || !data.crops) {
+        throw new Error(data.error || "Analysis failed");
+      }
       setResult(data);
       setPin(data.lat, data.lon, data.locationName);
       setPhase("result");
-    } catch {
-      // Client-side network failure: still show something usable.
-      setResult({
-        locationName: label ?? (query.trim() || "Nearby location"),
-        lat: lat ?? 33.749,
-        lon: lon ?? -84.388,
-        soil: {
-          mapUnitName: "Cecil sandy loam",
-          componentName: "Cecil",
-          texture: "Sandy loam",
-          drainage: "Well drained",
-          phLow: 5.1,
-          phHigh: 6.0,
-        },
-        climate: {
-          meanAnnualRainfallMm: 1260,
-          meanSummerHighC: 31.5,
-          meanWinterLowC: 1.2,
-          avgFirstFrost: "Nov 12",
-          avgLastFrost: "Mar 22",
-          growingSeasonDays: 235,
-        },
-        crops: [
-          {
-            name: "Tomato",
-            score: 0.9,
-            reason: "Warm-season crop suits a long Southern growing season.",
-          },
-        ],
-        fromCache: true,
-      });
-      setPhase("result");
+      console.log(
+        `[plantify] crop ranking\n${data.crops
+          .map((crop, index) => `${index + 1}. ${crop.name}  ${crop.score.toFixed(3)}`)
+          .join("\n")}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+      setPhase("input");
     }
   }
 
@@ -183,13 +165,14 @@ export default function PlantifyApp() {
           >
             Show me what grows here.
           </button>
+          {error ? <p className="form-error">{error}</p> : null}
         </section>
       )}
 
       {phase === "loading" && (
         <section className="panel loading enter" aria-live="polite">
-          <p className="loading-msg">Reading the soil and climate…</p>
-          <p className="loading-sub">Usually a few seconds.</p>
+          <p className="loading-msg">Reading the soil and hardiness zone…</p>
+          <p className="loading-sub">This can take a little while.</p>
         </section>
       )}
 
@@ -200,38 +183,58 @@ export default function PlantifyApp() {
           </button>
 
           <h2 className="result-title">{result.locationName}</h2>
+          <p className="soil-name">{result.soil.mapUnitName}</p>
 
-          <div className="fact-rows">
-            <div className="fact-row">
-              <span className="fact-key">Soil</span>
-              <span className="fact-val">
-                {result.soil.mapUnitName} · {result.soil.texture} ·{" "}
-                {result.soil.drainage}
-              </span>
-            </div>
-            <div className="fact-row">
-              <span className="fact-key">Climate</span>
-              <span className="fact-val">
-                {result.climate.meanAnnualRainfallMm} mm rain · summer{" "}
-                {result.climate.meanSummerHighC}°C · winter{" "}
-                {result.climate.meanWinterLowC}°C
-              </span>
-            </div>
-            <div className="fact-row">
-              <span className="fact-key">Season</span>
-              <span className="fact-val">
-                Frost {result.climate.avgLastFrost}–{result.climate.avgFirstFrost}{" "}
-                · {result.climate.growingSeasonDays} days
-              </span>
-            </div>
+          <div className="stat-grid">
+            {result.usdaZone ? (
+              <article className="stat-card">
+                <span className="stat-key">Zone</span>
+                <strong>{result.usdaZone}</strong>
+                <span className="stat-note">USDA hardiness</span>
+              </article>
+            ) : null}
+            <article className="stat-card">
+              <span className="stat-key">Soil pH</span>
+              <strong>
+                {result.soil.phLow.toFixed(1)}–{result.soil.phHigh.toFixed(1)}
+              </strong>
+              <span className="stat-note">{phWords(result.soil.phLow, result.soil.phHigh)}</span>
+            </article>
+            <article className="stat-card">
+              <span className="stat-key">Texture</span>
+              <strong>{result.soil.texture}</strong>
+            </article>
+            <article className="stat-card">
+              <span className="stat-key">Drainage</span>
+              <strong>{result.soil.drainage}</strong>
+            </article>
           </div>
 
-          <h3 className="crops-heading">What thrives here</h3>
+          {result.watering ? (
+            <aside className="water-card">
+              <p className="water-kicker">Watering</p>
+              <h3>{result.watering.headline}</h3>
+              <p>{result.watering.detail}</p>
+            </aside>
+          ) : null}
+
+          <h3 className="crops-heading">What to plant</h3>
           <ol className="crop-list">
-            {result.crops.map((crop) => (
-              <li key={crop.name} className="crop-item">
-                <span className="crop-name">{crop.name}</span>
-                <span className="crop-reason">{crop.reason}</span>
+            {result.crops.map((crop, index) => (
+              <li key={crop.name} className="crop-card">
+                <span className="crop-rank" aria-hidden>
+                  {index + 1}
+                </span>
+                <div className="crop-body">
+                  <span className="crop-name">{crop.name}</span>
+                  {index === 0 ? <span className="crop-badge">Best fit</span> : null}
+                  <ul className="crop-tags">
+                    {crop.ph ? <li>pH {crop.ph}</li> : null}
+                    {crop.zones ? <li>{crop.zones}</li> : null}
+                    {crop.soil ? <li>{crop.soil}</li> : null}
+                    {crop.drainage ? <li>{crop.drainage}</li> : null}
+                  </ul>
+                </div>
               </li>
             ))}
           </ol>

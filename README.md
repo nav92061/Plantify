@@ -9,9 +9,9 @@ No auth. No database required for the core flow. Deployable on Vercel with zero 
 - Next.js App Router + TypeScript + Tailwind CSS
 - `react-leaflet` + OpenStreetMap tiles (no API key)
 - US Census Geocoder → Nominatim fallback
-- Open-Meteo climate archive
-- USDA SSURGO via Soil Data Access
-- 60-city cached fallback (`data/cached.ts`) if any API fails or exceeds 4 seconds
+- USDA SSURGO via Soil Data Access (texture, drainage, and pH at the point)
+- USDA hardiness zone from the ZIP code (`phzmapi.org`)
+- Crop ranking from `data/Crops.csv` (pH, zone, texture, drainage, revenue)
 - Optional Vercel KV for email capture
 
 ## Local setup
@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 npx vercel --prod
 ```
 
-No environment variables are required for geocoding, climate, soil, or crop scoring.
+No environment variables are required for geocoding, soil, hardiness zone, or crop scoring.
 
 ### Optional: email capture (Vercel KV)
 
@@ -47,8 +47,8 @@ If KV is missing, `POST /api/email` logs the address and still returns success.
 
 1. Enter a city / ZIP / address, use browser geolocation, or tap the map.
 2. All paths resolve to a lat/lon, then hit `POST /api/analyze`.
-3. Pipeline: geocode (if needed) → Open-Meteo climate → SSURGO soil → crop scoring.
-4. Hard 4s timeout; on failure, nearest city from `data/cached.ts` by haversine distance.
+3. Pipeline: geocode (if needed) → SSURGO texture, drainage, and pH → ZIP hardiness zone → rank `data/Crops.csv`.
+4. Ranking uses the iOS weights with revenue left out: pH, hardiness zone, texture, and drainage. The scored pH is the midpoint of the survey’s low and high. ZIP codes come from Census ZIP Code Tabulation Area polygons, then OpenStreetMap if that layer misses.
 
 Regenerate cache seeds (optional):
 
